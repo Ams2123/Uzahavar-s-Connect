@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RC Car Control</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    .container {
+            
+        }
+    .container {
+      display: flex;  /* Enable flexbox */
+      height: 100vh;  /* Set full height */
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .left-section {
+      flex: 1;  /* Left section takes half the space */
+      background-color: #f4f4f4;
+      padding: 20px;
+    }
+
+    .right-section {
+      flex: 1;  /* Right section takes half the space */
+      background-color: #ffffff;
+      padding: 20px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 20px;
+      font-size: 20px;
+      margin: 10px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    
+    .btn:hover {
+      background-color: #186d2e;
+    }
+
+    .lbl{
+      width: 200px;
+      display: block; 
+      padding: 20px;
+      font-size: 20px;
+      margin: 10px;
+      cursor: pointer;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+
+    .lbl:hover {
+      display: block; 
+      background-color: #186d2e;
+      color: black;
+    }
+    #imageCanvas {
+       max-width: 100%;
+       border: 5px solid #ddd;
+    }
+    .result-container {
+       margin-top: 20px;
+    }
+
+  </style>
+</head>
+<body>
+  <h1>Remote Controlled Car</h1>
+  <div class="container">
+    <div class="left-section">
+      <div>
+        <button class="btn" id="fwd" >Forward</button>
+      </div>
+      <div>
+        <button class="btn" id="lef" >Left</button>
+        <button class="btn" id="rig">Right</button>
+      </div>
+      <div>
+        <button class="btn" id="bwd" >Backward</button>
+      </div>
+    </div>
+
+    <div class="right-section">
+      <div><label id="temp" class="lbl"></label></div>
+      <div><label id="humi" class="lbl"></label></div>
+      <div><label id="ndvi" class="lbl"></label></div>
+    </div>
+
+    <div>
+      <input type="file" id="imageInput" accept="image/*">
+      <canvas id="imageCanvas"></canvas>
+      <div><label id="disease" class="lbl">Disease</label></div>
+    </div>
+  </div>
+
+  <script>
+
+    const canvas = document.getElementById('imageCanvas');
+    const ctx = canvas.getContext('2d');
+    const imageInput = document.getElementById('imageInput');
+    const resultsDiv = document.getElementById('results');
+
+    imageInput.addEventListener('change', handleImage);
+
+    // Function to send command to the ESP8266
+    function sendCommand(direction) {
+      fetch(`http://192.168.208.68/home?direction=${direction}`, {
+        method: 'GET',
+        mode: 'cors'  // Change to 'cors' to properly handle server response
+      })
+      .then(response => response.text())  // Parse the response as text
+      .then(data => {
+        console.log('Response from server:', data); 
+        document.getElementById("temp").textContent = "Temperature : "+data.split(',')[0]+" C";
+        document.getElementById("humi").textContent = "Humidity    : "+data.split(',')[1]+"  ";
+        document.getElementById("ndvi").textContent = "NDVI        : "+data.split(',')[2]+"  ";
+      })
+      .catch(error => console.error('Error:', error));  // Handle any errors
+    }
+
+    // Add event listeners to the buttons
+    for (let cmd of ['fwd','bwd','rig','lef']) {
+      document.getElementById(cmd).addEventListener("mousedown", function() {
+        sendCommand(cmd);  // Send command when button is pressed
+      });
+      document.getElementById(cmd).addEventListener("mouseup", function() {
+        sendCommand("stop");  // Stop the car when the button is released
+      });
+    }
+  
+    function handleImage(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                // Set canvas size to match image
+                canvas.width = img.width;
+                canvas.height = img.height;
+                
+                // Draw original image
+                ctx.drawImage(img, 0, 0);
+                
+                // Send to backend for detection
+                detectObjects(event.target.result);
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+    }
+
+    async function detectObjects(imageData) {
+        try {
+            const response = await fetch('/detect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image: imageData
+                })
+            });
+            
+            const data = await response.json();
+            
+            // Draw bounding boxes
+            data.detections.forEach(det => {
+                const [x1, y1, x2, y2] = det.bbox;
+                
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 5;
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                
+            });
+            
+            // Display results
+            document.getElementById("disease").textContent = "Disease : "+String(det.class)+"  "
+        } catch (error) {
+            console.error('Error:', error);
+            resultsDiv.textContent = 'Error processing image';
+        }
+    }
+  
+
+
+
+  </script>
+</body>
+</html>
